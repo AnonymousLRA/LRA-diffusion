@@ -14,3 +14,9 @@ source ./venv3/bin/activate
 pip install -r requirements.txt
 ```
 
+## 2. Pre-trained model
+The pre-trianed SimCLR encoder for CIFAR-10 and CIFAR-100 is available at: <br />
+Please download the model and put them in to the model folder.
+
+## 3. Noisy label
+
