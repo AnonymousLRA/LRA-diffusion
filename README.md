@@ -1,7 +1,7 @@
 # LRA-diffusion
 This is the source code of the Label-Retrieval-Augmented Diffusion Models for learning with noisy labels.
 
-<img src="DDIM_TSNE.pdf" width="200">
+xfun::embed_file("DDIM_TSNE.pdf")
 
 ## 1. preparing python environment
 create a virtual environment.<br />
