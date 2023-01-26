@@ -1,5 +1,5 @@
 # LRA-diffusion
-Label-Retrieval-Augmented Diffusion Models
+This is the source code of the Label-Retrieval-Augmented Diffusion Models for learning with noisy labels.
 
 ## 1. preparing python environment
 create a virtual environment.<br />
