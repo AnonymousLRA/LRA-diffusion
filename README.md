@@ -1,7 +1,7 @@
 # LRA-diffusion
 This is the source code of the Label-Retrieval-Augmented Diffusion Models for learning with noisy labels.
 
-![](https://github.com/AnonymousLRA/LRA-diffusion/files/10512654/DDIM_TSNE.pdf)
+![label generation on CIFAR10](https://github.com/AnonymousLRA/LRA-diffusion/files/10512654/DDIM_TSNE.pdf)
 
 ## 1. preparing python environment
 create a virtual environment.<br />
