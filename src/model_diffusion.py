@@ -66,7 +66,7 @@ class ConditionalModel(nn.Module):
 
 
 class Diffusion(nn.Module):
-    def __init__(self, fp_encoder, num_timesteps=1000, n_class=10, fp_dim=128, device='cpu', beta_schedule='linear', feature_dim=4096):
+    def __init__(self, fp_encoder, num_timesteps=1000, n_class=10, fp_dim=512, device='cpu', beta_schedule='linear', feature_dim=4096):
         super().__init__()
         self.device = device
         # self.model_var_type = 'fixedlarge'
@@ -92,6 +92,7 @@ class Diffusion(nn.Module):
         self.fp_dim = fp_dim
 
         self.fp_encoder = fp_encoder
+        self.fp_encoder.eval()
         self.model = ConditionalModel(self.num_timesteps, y_dim=self.n_class, fp_dim=fp_dim,
                                       feature_dim=feature_dim, guidance=True).to(self.device)
 

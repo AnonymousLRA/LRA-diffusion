@@ -50,7 +50,8 @@ def prepare_fp_x(fp_encoder, dataset, feature_dim=10):
     return prior
 
 
-def train(diffusion_model, train_dataset, val_dataset, test_dataset, model_save_dir, n_epochs=1000, batch_size=256, k=10):
+def train(diffusion_model, train_dataset, val_dataset, test_dataset, model_save_dir,
+          n_epochs=1000, batch_size=256, k=10, real_fp=True):
     device = diffusion_model.device
     n_class = diffusion_model.n_class
     warmup_epochs = 50
@@ -78,8 +79,10 @@ def train(diffusion_model, train_dataset, val_dataset, test_dataset, model_save_
             for i, data_batch in pbar:
                 [x_batch, y_batch, data_indices] = data_batch[:3]
 
-                # y_prior = diffusion_model.fp_encoder(x_batch.to(device))
-                y_prior = fp_embd[data_indices, :]
+                if real_fp:
+                    y_prior = diffusion_model.fp_encoder(x_batch.to(device))
+                else:
+                    y_prior = fp_embd[data_indices, :]
                 y_labels_batch, sample_weight = sample_knn_labels(y_prior, y_batch.to(device), fp_embd,
                                                                   torch.tensor(train_dataset.targets).to(device),
                                                                   k=k, n_class=n_class, weighted=True)
@@ -179,10 +182,12 @@ if __name__ == "__main__":
     # load fp encoder
     if args.fp_encoder == 'SimCLR':
         fp_dim = 2048
+        real_fp = True
         state_dict = torch.load(f'../model/SimCLR_128_{dataset}.pt', map_location=torch.device(args.device))
         fp_encoder = SimCLR_encoder(feature_dim=128).to(args.device)
         fp_encoder.load_state_dict(state_dict, strict=False)
     elif args.fp_encoder == 'CLIP':
+        real_fp = False
         fp_encoder = clip_img_wrap('ViT-L/14', args.device)
         fp_dim = fp_encoder.dim
     else:
@@ -195,7 +200,8 @@ if __name__ == "__main__":
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
 
-    train_dataset = Custom_dataset(train_dataset_cifar.data[:45000], train_dataset_cifar.targets[:45000], transform=transform_train)
+    train_dataset = Custom_dataset(train_dataset_cifar.data[:45000], train_dataset_cifar.targets[:45000],
+                                   transform=transform_train)
     val_dataset = Custom_dataset(train_dataset_cifar.data[45000:], train_dataset_cifar.targets[45000:])
     test_dataset = Custom_dataset(test_dataset_cifar.data, test_dataset_cifar.targets)
 
@@ -215,7 +221,8 @@ if __name__ == "__main__":
     # train the diffusion model
     print(f'training LRA-diffusion using fp encoder: {args.fp_encoder} on: {args.noise_type}.')
     print(f'model saving dir: {model_path}')
-    train(diffusion_model, train_dataset, val_dataset, test_dataset, model_path, n_epochs=args.nepoch, batch_size=args.batch_size, k=args.k)
+    train(diffusion_model, train_dataset, val_dataset, test_dataset, model_path, n_epochs=args.nepoch,
+          batch_size=args.batch_size, k=args.k, real_fp=real_fp)
 
 
 
