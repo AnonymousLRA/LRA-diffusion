@@ -24,5 +24,6 @@ pip install -r requirements.txt
 The pre-trianed SimCLR encoder for CIFAR-10 and CIFAR-100 is available at: <br />
 Please download the model and put them in to the model folder.
 
-## 3. Noisy label
+## 3. Generate the Poly-Margin Diminishing (PMD) Noisy Labels
+The noisy labels used in our experiments are provided in folder `noisy_labels`.
 
