@@ -91,24 +91,9 @@ def p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochast
 
 
 # Reverse function -- sample y_0 given y_1
-def p_sample_t_1to0(model, x, y_t, fp_x, one_minus_alphas_bar_sqrt):
+def p_sample_t_1to0(model, x, y_t, fp_x, one_minus_alphas_bar_sqrt, fq_x=None):
     device = next(model.parameters()).device
     t = torch.tensor([0]).to(device)  # corresponding to timestep 1 (i.e., t=1 in diffusion models)
-    sqrt_one_minus_alpha_bar_t = extract(one_minus_alphas_bar_sqrt, t, y_t)
-    sqrt_alpha_bar_t = (1 - sqrt_one_minus_alpha_bar_t.square()).sqrt()
-    eps_theta = model(x, y_t, t, fp_x).to(device).detach()
-    # y_0 reparameterization
-    y_0_reparam = 1 / sqrt_alpha_bar_t * (
-            y_t - eps_theta * sqrt_one_minus_alpha_bar_t)
-    y_t_m_1 = y_0_reparam.to(device)
-    return y_t_m_1
-
-
-def y_0_reparam(model, x, y_t, fp_x, t, one_minus_alphas_bar_sqrt, fq_x=None):
-    """
-    Obtain y_0 reparameterization from q(y_t | y_0), in which noise term is the eps_theta prediction.
-    """
-    device = next(model.parameters()).device
     sqrt_one_minus_alpha_bar_t = extract(one_minus_alphas_bar_sqrt, t, y_t)
     sqrt_alpha_bar_t = (1 - sqrt_one_minus_alpha_bar_t.square()).sqrt()
     eps_theta = model(x, y_t, t, fp_x).to(device).detach()
@@ -120,36 +105,42 @@ def y_0_reparam(model, x, y_t, fp_x, t, one_minus_alphas_bar_sqrt, fq_x=None):
         y_0_reparam = 1 / sqrt_alpha_bar_t * (
                 y_t - (1 - sqrt_alpha_bar_t) * fq_x - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
 
-    return y_0_reparam
+    y_t_m_1 = y_0_reparam.to(device)
+    return y_t_m_1
 
 
 def p_sample_loop(model, x, fp_x, n_steps, alphas, one_minus_alphas_bar_sqrt,
-                  only_last_sample=True, stochastic=True):
+                  only_last_sample=True, stochastic=True, fq_x=None):
     num_t, y_p_seq = None, None
     device = next(model.parameters()).device
-    cur_y = stochastic * torch.randn_like(fp_x).to(device)
+    batch_size = x.shape[0]
+
+    if fq_x is None:
+        y_t = stochastic * torch.randn_like(torch.zeros([batch_size, model.y_dim])).to(device)
+    else:
+        y_t = stochastic * torch.randn_like(torch.zeros([batch_size, model.y_dim])).to(device) + fq_x
 
     if only_last_sample:
         num_t = 1
     else:
-        # y_p_seq = [cur_y]
-        y_p_seq = torch.zeros([cur_y.shape[0], cur_y.shape[1], n_steps+1]).to(device)
-        y_p_seq[:, :, n_steps] = cur_y
+        # y_p_seq = [y_t]
+        y_p_seq = torch.zeros([y_t.shape[0], y_t.shape[1], n_steps+1]).to(device)
+        y_p_seq[:, :, n_steps] = y_t
     for t in reversed(range(1, n_steps)):
-        y_t = cur_y
-        cur_y = p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochastic=stochastic)  # y_{t-1}
+        y_t = y_t
+        y_t = p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochastic=stochastic, fq_x=fq_x)  # y_{t-1}
         if only_last_sample:
             num_t += 1
         else:
-            # y_p_seq.append(cur_y)
-            y_p_seq[:, :, t] = cur_y
+            # y_p_seq.append(y_t)
+            y_p_seq[:, :, t] = y_t
     if only_last_sample:
         assert num_t == n_steps
-        y_0 = p_sample_t_1to0(model, x, cur_y, fp_x, one_minus_alphas_bar_sqrt)
+        y_0 = p_sample_t_1to0(model, x, y_t, fp_x, one_minus_alphas_bar_sqrt, fq_x=fq_x)
         return y_0
     else:
         # assert len(y_p_seq) == n_steps
-        y_0 = p_sample_t_1to0(model, x, y_p_seq[:, :, 1], fp_x, one_minus_alphas_bar_sqrt)
+        y_0 = p_sample_t_1to0(model, x, y_p_seq[:, :, 1], fp_x, one_minus_alphas_bar_sqrt, fq_x=fq_x)
         # y_p_seq.append(y_0)
         y_p_seq[:, :, 0] = y_0
         return y_p_seq
@@ -186,11 +177,14 @@ def make_ddim_sampling_parameters(alphacums, ddim_timesteps, eta):
     return sigmas, alphas, alphas_prev
 
 
-def ddim_sample_loop(model, x, y_0_clr, timesteps, ddim_alphas, ddim_alphas_prev, ddim_sigmas, stochastic=True):
+def ddim_sample_loop(model, x, fp_x, timesteps, ddim_alphas, ddim_alphas_prev, ddim_sigmas, stochastic=True, fq_x=None):
     device = next(model.parameters()).device
     batch_size = x.shape[0]
 
-    y_t = stochastic * torch.randn_like(torch.zeros([batch_size, model.y_dim])).to(device)
+    if fq_x is None:
+        y_t = stochastic * torch.randn_like(torch.zeros([batch_size, model.y_dim])).to(device)
+    else:
+        y_t = stochastic * torch.randn_like(torch.zeros([batch_size, model.y_dim])).to(device) + fq_x
 
     # intermediates = {'y_inter': [y_t], 'pred_y0': [y_t]}
     time_range = np.flip(timesteps)
@@ -201,7 +195,7 @@ def ddim_sample_loop(model, x, y_0_clr, timesteps, ddim_alphas, ddim_alphas_prev
         index = total_steps - i - 1
         t = torch.full((batch_size,), step, device=device, dtype=torch.long)
 
-        y_t, pred_y0 = ddim_sample_step(model, x, y_t, y_0_clr, t, index, ddim_alphas, ddim_alphas_prev, ddim_sigmas)
+        y_t, pred_y0 = ddim_sample_step(model, x, y_t, fp_x, t, index, ddim_alphas, ddim_alphas_prev, ddim_sigmas, fq_x=fq_x)
 
         # intermediates['y_inter'].append(y_t)
         # intermediates['pred_y0'].append(pred_y0)
@@ -209,10 +203,10 @@ def ddim_sample_loop(model, x, y_0_clr, timesteps, ddim_alphas, ddim_alphas_prev
     return y_t
 
 
-def ddim_sample_step(model, x, y_t, y_0_clr, t, index, ddim_alphas, ddim_alphas_prev, ddim_sigmas):
+def ddim_sample_step(model, x, y_t, fp_x, t, index, ddim_alphas, ddim_alphas_prev, ddim_sigmas, fq_x=None):
     batch_size = x.shape[0]
     device = next(model.parameters()).device
-    e_t = model(x, y_t, t, y_0_clr).to(device).detach()
+    e_t = model(x, y_t, t, fp_x).to(device).detach()
 
     sqrt_one_minus_alphas = torch.sqrt(1. - ddim_alphas)
     # select parameters corresponding to the currently considered timestep
@@ -222,7 +216,8 @@ def ddim_sample_step(model, x, y_t, y_0_clr, t, index, ddim_alphas, ddim_alphas_
     sqrt_one_minus_at = torch.full([batch_size, 1], sqrt_one_minus_alphas[index], device=device)
 
     # current prediction for x_0
-    pred_x0 = (y_t - sqrt_one_minus_at * e_t) / a_t.sqrt()
+    if fq_x is None:
+        pred_x0 = (y_t - sqrt_one_minus_at * e_t) / a_t.sqrt()
 
     # direction pointing to x_t
     dir_yt = (1. - a_prev - sigma_t ** 2).sqrt() * e_t
