@@ -37,27 +37,27 @@ def extract(input, t, x):
 
 
 # Forward functions
-def q_sample(y, alphas_bar_sqrt, one_minus_alphas_bar_sqrt, t, noise=None):
+def q_sample(y, alphas_bar_sqrt, one_minus_alphas_bar_sqrt, t, noise=None, fq_x=None):
 
     if noise is None:
         noise = torch.randn_like(y).to(y.device)
     sqrt_alpha_bar_t = extract(alphas_bar_sqrt, t, y)
     sqrt_one_minus_alpha_bar_t = extract(one_minus_alphas_bar_sqrt, t, y)
     # q(y_t | y_0, x)
-    y_t = sqrt_alpha_bar_t * y + sqrt_one_minus_alpha_bar_t * noise
+    if fq_x is None:
+        y_t = sqrt_alpha_bar_t * y + sqrt_one_minus_alpha_bar_t * noise
+    else:
+        y_t = sqrt_alpha_bar_t * y + (1 - sqrt_alpha_bar_t) * fq_x + sqrt_one_minus_alpha_bar_t * noise
     return y_t
 
 
 # Reverse function -- sample y_{t-1} given y_t
-def p_sample(model, x, y_t, y_0_clr, t, alphas, one_minus_alphas_bar_sqrt, stochastic=False):
+def p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochastic=False, fq_x=None):
     """
     Reverse diffusion process sampling -- one time step.
     y: sampled y at time step t, y_t.
-    y_0_pred: prediction of classifier model.
-    y_T_mean: mean of prior distribution at timestep T.
-    We replace y_0_hat with y_T_mean in the forward process posterior mean computation, emphasizing that 
-        guidance model prediction y_0_hat = f_phi(x) is part of the input to eps_theta network, while 
-        in paper we also choose to set the prior mean at timestep T y_T_mean = f_phi(x).
+    fp_x: embedding of fp encoder.
+    fq_x: embedding of fq encoder.
     """
     device = next(model.parameters()).device
     z = stochastic * torch.randn_like(y_t)
@@ -70,12 +70,20 @@ def p_sample(model, x, y_t, y_0_clr, t, alphas, one_minus_alphas_bar_sqrt, stoch
     # y_t_m_1 posterior mean component coefficients
     gamma_0 = (1 - alpha_t) * sqrt_alpha_bar_t_m_1 / (sqrt_one_minus_alpha_bar_t.square())
     gamma_1 = (sqrt_one_minus_alpha_bar_t_m_1.square()) * (alpha_t.sqrt()) / (sqrt_one_minus_alpha_bar_t.square())
-    eps_theta = model(x, y_t, t, y_0_clr).to(device).detach()
+
+    eps_theta = model(x, y_t, t, fp_x).to(device).detach()
     # y_0 reparameterization
     y_0_reparam = 1 / sqrt_alpha_bar_t * (
             y_t - eps_theta * sqrt_one_minus_alpha_bar_t)
+
     # posterior mean
-    y_t_m_1_hat = gamma_0 * y_0_reparam + gamma_1 * y_t
+    if fq_x is None:
+        y_t_m_1_hat = gamma_0 * y_0_reparam + gamma_1 * y_t
+    else:
+        gamma_2 = 1 + (sqrt_alpha_bar_t - 1) * (alpha_t.sqrt() + sqrt_alpha_bar_t_m_1) / (
+            sqrt_one_minus_alpha_bar_t.square())
+        y_t_m_1_hat = gamma_0 * y_0_reparam + gamma_1 * y_t + gamma_2 * fq_x
+
     # posterior variance
     beta_t_hat = (sqrt_one_minus_alpha_bar_t_m_1.square()) / (sqrt_one_minus_alpha_bar_t.square()) * (1 - alpha_t)
     y_t_m_1 = y_t_m_1_hat.to(device) + beta_t_hat.sqrt().to(device) * z.to(device)
@@ -83,12 +91,12 @@ def p_sample(model, x, y_t, y_0_clr, t, alphas, one_minus_alphas_bar_sqrt, stoch
 
 
 # Reverse function -- sample y_0 given y_1
-def p_sample_t_1to0(model, x, y_t, y_0_clr, one_minus_alphas_bar_sqrt):
+def p_sample_t_1to0(model, x, y_t, fp_x, one_minus_alphas_bar_sqrt):
     device = next(model.parameters()).device
     t = torch.tensor([0]).to(device)  # corresponding to timestep 1 (i.e., t=1 in diffusion models)
     sqrt_one_minus_alpha_bar_t = extract(one_minus_alphas_bar_sqrt, t, y_t)
     sqrt_alpha_bar_t = (1 - sqrt_one_minus_alpha_bar_t.square()).sqrt()
-    eps_theta = model(x, y_t, t, y_0_clr).to(device).detach()
+    eps_theta = model(x, y_t, t, fp_x).to(device).detach()
     # y_0 reparameterization
     y_0_reparam = 1 / sqrt_alpha_bar_t * (
             y_t - eps_theta * sqrt_one_minus_alpha_bar_t)
@@ -96,26 +104,30 @@ def p_sample_t_1to0(model, x, y_t, y_0_clr, one_minus_alphas_bar_sqrt):
     return y_t_m_1
 
 
-def y_0_reparam(model, x, y_t, y_0_clr, t, one_minus_alphas_bar_sqrt):
+def y_0_reparam(model, x, y_t, fp_x, t, one_minus_alphas_bar_sqrt, fq_x=None):
     """
     Obtain y_0 reparameterization from q(y_t | y_0), in which noise term is the eps_theta prediction.
-    Algorithm 2 Line 4 in paper.
     """
     device = next(model.parameters()).device
     sqrt_one_minus_alpha_bar_t = extract(one_minus_alphas_bar_sqrt, t, y_t)
     sqrt_alpha_bar_t = (1 - sqrt_one_minus_alpha_bar_t.square()).sqrt()
-    eps_theta = model(x, y_t, t, y_0_clr).to(device).detach()
+    eps_theta = model(x, y_t, t, fp_x).to(device).detach()
     # y_0 reparameterization
-    y_0_reparam = 1 / sqrt_alpha_bar_t * (
-            y_t - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
+    if fq_x is None:
+        y_0_reparam = 1 / sqrt_alpha_bar_t * (
+                y_t - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
+    else:
+        y_0_reparam = 1 / sqrt_alpha_bar_t * (
+                y_t - (1 - sqrt_alpha_bar_t) * fq_x - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
+
     return y_0_reparam
 
 
-def p_sample_loop(model, x, y_0_clr, n_steps, alphas, one_minus_alphas_bar_sqrt,
+def p_sample_loop(model, x, fp_x, n_steps, alphas, one_minus_alphas_bar_sqrt,
                   only_last_sample=True, stochastic=True):
     num_t, y_p_seq = None, None
     device = next(model.parameters()).device
-    cur_y = stochastic * torch.randn_like(y_0_clr).to(device)
+    cur_y = stochastic * torch.randn_like(fp_x).to(device)
 
     if only_last_sample:
         num_t = 1
@@ -125,7 +137,7 @@ def p_sample_loop(model, x, y_0_clr, n_steps, alphas, one_minus_alphas_bar_sqrt,
         y_p_seq[:, :, n_steps] = cur_y
     for t in reversed(range(1, n_steps)):
         y_t = cur_y
-        cur_y = p_sample(model, x, y_t, y_0_clr, t, alphas, one_minus_alphas_bar_sqrt, stochastic=stochastic)  # y_{t-1}
+        cur_y = p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochastic=stochastic)  # y_{t-1}
         if only_last_sample:
             num_t += 1
         else:
@@ -133,11 +145,11 @@ def p_sample_loop(model, x, y_0_clr, n_steps, alphas, one_minus_alphas_bar_sqrt,
             y_p_seq[:, :, t] = cur_y
     if only_last_sample:
         assert num_t == n_steps
-        y_0 = p_sample_t_1to0(model, x, cur_y, y_0_clr, one_minus_alphas_bar_sqrt)
+        y_0 = p_sample_t_1to0(model, x, cur_y, fp_x, one_minus_alphas_bar_sqrt)
         return y_0
     else:
         # assert len(y_p_seq) == n_steps
-        y_0 = p_sample_t_1to0(model, x, y_p_seq[:, :, 1], y_0_clr, one_minus_alphas_bar_sqrt)
+        y_0 = p_sample_t_1to0(model, x, y_p_seq[:, :, 1], fp_x, one_minus_alphas_bar_sqrt)
         # y_p_seq.append(y_0)
         y_p_seq[:, :, 0] = y_0
         return y_p_seq
