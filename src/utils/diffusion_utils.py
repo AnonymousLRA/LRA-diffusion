@@ -231,7 +231,3 @@ def ddim_sample_step(model, x, y_t, y_0_clr, t, index, ddim_alphas, ddim_alphas_
     x_prev = a_prev.sqrt() * pred_x0 + dir_yt + noise
     return x_prev, pred_x0
 
-
-if __name__ == "__main__":
-
-    x = torch.ones([10])
