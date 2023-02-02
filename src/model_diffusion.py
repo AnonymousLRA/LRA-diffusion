@@ -20,11 +20,34 @@ class ConditionalLinear(nn.Module):
 
 
 class ConditionalModel(nn.Module):
-    def __init__(self, n_steps, y_dim=10, fp_dim=128, feature_dim=4096, guidance=True):
+    def __init__(self, n_steps, y_dim=10, fp_dim=128, feature_dim=4096, guidance=True, encoder_type='resnet34'):
         super(ConditionalModel, self).__init__()
         n_steps = n_steps + 1
         self.y_dim = y_dim
         self.guidance = guidance
+        self.encoder_type = encoder_type
+
+        if encoder_type == 'resnet34':
+            self.encoder_x = preact_resnet34(num_input_channels=3, num_classes=feature_dim)
+        elif encoder_type == 'resnet18':
+            self.encoder_x = preact_resnet18(num_input_channels=3, num_classes=feature_dim)
+        elif encoder_type == 'resnet101':
+            self.encoder_x = preact_resnet101(num_input_channels=3, num_classes=feature_dim)
+        elif encoder_type == 'resnet50':
+            self.encoder_x = ResNet50(num_input_channels=3, num_classes=feature_dim)
+        elif encoder_type == 'linear':
+            self.encoder_x = nn.Sequential(
+            nn.Linear(3072, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Softplus(),
+            nn.Linear(feature_dim, feature_dim),
+            nn.BatchNorm1d(feature_dim),
+            nn.Softplus(),
+            nn.Linear(feature_dim, feature_dim)
+        )
+        else:
+            raise Exception("ResNet type should be one of [18, 34, 50, 101, 152]")
+
         # encoder for x
         self.encoder_x = preact_resnet34(num_input_channels=3, num_classes=feature_dim)
 
@@ -46,7 +69,12 @@ class ConditionalModel(nn.Module):
 
     def forward(self, x, y, t, fp_x=None):
 
-        x_embed = self.encoder_x(x)
+        if self.encoder_type == 'linear':
+            x_flat = torch.flatten(x, 1)
+            x_embed = self.encoder_x(x_flat)
+        else:
+            x_embed = self.encoder_x(x, feature_out=False)
+
         x_embed = self.norm(x_embed)
 
         if self.guidance:
