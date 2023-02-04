@@ -122,8 +122,8 @@ def train(diffusion_model, train_dataset, val_dataset, test_dataset, model_save_
                 # save diffusion model
                 print('Improved! evaluate on testing set...')
                 test_acc = test(diffusion_model, test_loader)
-                states = [diffusion_model.model.state_dict(), diffusion_model.fp_encoder.state_dict()]
-                torch.save(states, model_save_dir)
+                # states = [diffusion_model.model.state_dict(), diffusion_model.fp_encoder.state_dict()]
+                # torch.save(states, model_save_dir)
                 print(f"Model saved, update best accuracy at Epoch {epoch}, val acc: {val_acc}, test acc: {test_acc}")
                 max_accuracy = max(max_accuracy, val_acc)
 
@@ -156,9 +156,11 @@ if __name__ == "__main__":
     parser.add_argument("--device", default='cpu', help="which GPU to use", type=str)
     parser.add_argument("--num_workers", default=4, help="num_workers", type=int)
     parser.add_argument("--warmup_epochs", default=20, help="warmup_epochs", type=int)
+    parser.add_argument("--feature_dim", default=2048, help="feature_dim", type=int)
     parser.add_argument("--k", default=10, help="k neighbors for knn", type=int)
     parser.add_argument("--ddim_n_step", default=10, help="number of steps in ddim", type=int)
-    parser.add_argument("--fp_encoder", default='SimCLR', help="which encoder (SimCLR or CLIP)", type=str)
+    parser.add_argument("--fp_encoder", default='SimCLR', help="which encoder for fp (SimCLR or CLIP)", type=str)
+    parser.add_argument("--diff_encoder", default='resnet34', help="which encoder for diffusion (linear, resnet18, 34, 50...)", type=str)
     args = parser.parse_args()
 
     # print device
@@ -212,8 +214,8 @@ if __name__ == "__main__":
 
     # initialize diffusion model
     model_path = f'../model/LRA-diffusion_{args.fp_encoder}_{args.noise_type}.pt'
-    diffusion_model = Diffusion(fp_encoder=fp_encoder, n_class=n_class, fp_dim=fp_dim, feature_dim=1024,
-                                device=device, encoder_type='resnet34', ddim_num_steps=args.ddim_n_step)
+    diffusion_model = Diffusion(fp_encoder=fp_encoder, n_class=n_class, fp_dim=fp_dim, feature_dim=args.feature_dim,
+                                device=device, encoder_type=args.diff_encoder, ddim_num_steps=args.ddim_n_step)
     # state_dict = torch.load(model_path, map_location=torch.device(device))
     # diffusion_model.load_diffusion_net(state_dict)
     diffusion_model.fp_encoder.eval()
