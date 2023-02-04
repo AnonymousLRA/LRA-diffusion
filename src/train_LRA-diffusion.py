@@ -156,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", default='cpu', help="which GPU to use", type=str)
     parser.add_argument("--num_workers", default=4, help="num_workers", type=int)
     parser.add_argument("--warmup_epochs", default=20, help="warmup_epochs", type=int)
-    parser.add_argument("--feature_dim", default=2048, help="feature_dim", type=int)
+    parser.add_argument("--feature_dim", default=512, help="feature_dim", type=int)
     parser.add_argument("--k", default=10, help="k neighbors for knn", type=int)
     parser.add_argument("--ddim_n_step", default=10, help="number of steps in ddim", type=int)
     parser.add_argument("--fp_encoder", default='SimCLR', help="which encoder for fp (SimCLR or CLIP)", type=str)
