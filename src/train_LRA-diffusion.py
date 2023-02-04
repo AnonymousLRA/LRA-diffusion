@@ -173,7 +173,6 @@ if __name__ == "__main__":
         n_class = 10
         train_dataset_cifar = torchvision.datasets.CIFAR10(root='../', train=True, download=True)
         test_dataset_cifar = torchvision.datasets.CIFAR10(root='../', train=False, download=True)
-        state_dict = torch.load('../model/SimCLR_128_cifar10.pt', map_location=torch.device(args.device))
     elif dataset == 'cifar100':
         n_class = 100
         train_dataset_cifar = torchvision.datasets.CIFAR100(root='../', train=True, download=True)
