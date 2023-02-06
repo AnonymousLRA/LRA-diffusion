@@ -73,8 +73,12 @@ def p_sample(model, x, y_t, fp_x, t, alphas, one_minus_alphas_bar_sqrt, stochast
 
     eps_theta = model(x, y_t, t, fp_x).to(device).detach()
     # y_0 reparameterization
-    y_0_reparam = 1 / sqrt_alpha_bar_t * (
-            y_t - eps_theta * sqrt_one_minus_alpha_bar_t)
+    if fq_x is None:
+        y_0_reparam = 1 / sqrt_alpha_bar_t * (
+                y_t - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
+    else:
+        y_0_reparam = 1 / sqrt_alpha_bar_t * (
+                y_t - (1 - sqrt_alpha_bar_t) * fq_x - eps_theta * sqrt_one_minus_alpha_bar_t).to(device)
 
     # posterior mean
     if fq_x is None:
